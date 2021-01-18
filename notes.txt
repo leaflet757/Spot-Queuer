@@ -1,0 +1,28 @@
+grab app token
+
+attempt refresh token
+
+if fail, grab access token for user
+
+Grab every artist and cache em
+
+for each artist
+    grab a chunk of albums 
+    for each album in chunk
+        check if album is released after last run
+            if so, grab chunk of tracks in the album
+            for each chunk
+                cache track ID
+
+For each chunk of tracks (limit 100)
+    Add tracks to playlist
+
+https://pypi.org/project/tekore/
+
+https://developer.spotify.com/documentation/web-api/reference/follow/get-followed/
+
+https://developer.spotify.com/documentation/web-api/reference/artists/get-artists-albums/
+
+https://developer.spotify.com/documentation/web-api/reference/albums/get-albums-tracks/
+
+https://developer.spotify.com/documentation/web-api/reference/library/save-tracks-user/
