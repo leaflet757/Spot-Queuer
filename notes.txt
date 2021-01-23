@@ -26,3 +26,9 @@ https://developer.spotify.com/documentation/web-api/reference/artists/get-artist
 https://developer.spotify.com/documentation/web-api/reference/albums/get-albums-tracks/
 
 https://developer.spotify.com/documentation/web-api/reference/library/save-tracks-user/
+
+#user.data
+client_id=XXX
+client_secret=XXX
+redirect_uri=https://example.com/callback
+listen_later=XXX
