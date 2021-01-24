@@ -2,6 +2,10 @@ import datetime
 import sys
 import tekore as tk
 
+# Example usage:
+# python src\spot-queuer.py C:\dev\projects\spot-queuer\user.data C:\dev\projects\spot-queuer\lastrun
+
+
 def get_last_run(filename):
     print("Checking last run...")
     # If the date format is changed the my_date variable might need updating
@@ -53,8 +57,6 @@ def init_config(user_data_path):
 ####################################################
 #........................MAIN......................#
 ####################################################
-
-print('Running Spot-Queuer...')
 
 last_run = get_last_run(sys.argv[2])
 conf = init_config(sys.argv[1])
