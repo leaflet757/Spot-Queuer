@@ -8,6 +8,10 @@ import tekore as tk
 # Example usage:
 # python src\spot-queuer.py C:\dev\projects\spot-queuer\user.data C:\dev\projects\spot-queuer\lastrun
 
+# TODO:
+# Monstercat label exception
+# display stale playlists
+
 
 def get_last_run(filename):
     # If the date format is changed the my_date variable might need updating
@@ -96,16 +100,16 @@ last_chunk_artist_id = ''
 last_chunk_album_index = 0
 last_chunk_track_index = 0
 
-# Uncomment me to find playlist IDs, will not work if more that 20 playlists
+# Uncomment me to find playlist IDs
 #current_user = spotify.current_user()
 #playlist_chunk = spotify.playlists(current_user.id, 20)
-#for playlist in playlist_chunk.items:
-#    print(playlist.name, playlist.id)
+#last_playlist = 0
+#while len(playlist_chunk.items) > 0:
+#    for playlist in playlist_chunk.items:
+#        print(playlist.name, playlist.id)
+#    last_playlist += len(playlist_chunk.items)
+#    playlist_chunk = spotify.playlists(current_user.id, 20, offset=last_playlist)
 #exit()
-# TODO:
-# add a rollback time option
-# get playlist count
-# add new playlist songs
 
 followed_artists = spotify.followed_artists(limit=ARTIST_LIMIT)
 
@@ -121,10 +125,8 @@ while len(followed_artists.items) > 0:
             exit()
         last_chunk_album_index = 0
         while len(artist_albums.items) > 0:
-            #print('tts')
             for album in artist_albums.items:
                 # increment the index regardless if we can add the album
-                #print('why')
                 album_date_split = album.release_date.split('-')
                 if len(album_date_split) != 3:
                     if len(album_date_split) == 1:
@@ -145,7 +147,6 @@ while len(followed_artists.items) > 0:
                 if album_date >= last_run:
                     print('  *%s queueing' % (album.name))
                     to_add_albums.append((album.id, album.total_tracks, len(all_artists) - 1))
-                #print('hmm')
             last_chunk_album_index += len(artist_albums.items)
             #print('last chunk', last_chunk_album_index, 'num itesm', len(artist_albums.items))
             try:
@@ -178,7 +179,8 @@ if to_add_length > 0:
         last_chunk_track_index = 0
 
         album_count += 1
-        print('Processing album', album_count, 'of', to_add_length, 'with ID', album_id)
+        if album_count % 50 == 1:
+            print('Processing album chunk', album_count, 'of', to_add_length)
         
         while last_chunk_track_index < album_track_num:
             try:
@@ -197,16 +199,44 @@ if to_add_length > 0:
                     to_add_tracks.append(track.uri)
             last_chunk_track_index += len(tracks.items)
     
+# Specified Playlists
+followed_playlists = get_user_playlists(sys.argv[1])
+if len(followed_playlists) > 0:
+    last_run_dt = datetime.combine(last_run, datetime.min.time())
+    for playlist_id in followed_playlists:
+        last_chunk_track_index = 0
+        try:
+            playlist_full = spotify.playlist(playlist_id, market=MARKET)
+            playlist_tracks = spotify.playlist_items(playlist_id, market=MARKET, limit=PLAYLIST_LIMIT)
+        except tk.TooManyRequests as err:
+            print(err.response)
+            print('aborting.')
+            exit()
+        print('>>>%s' % playlist_full.name)
+        while len(playlist_tracks.items) > 0:
+            for playlist_track in playlist_tracks.items:
+                if playlist_track.added_at >= last_run_dt:
+                    print('  *%s queueing' % playlist_track.track.name)
+                    to_add_tracks.append(playlist_track.track.uri)
+            last_chunk_track_index += len(playlist_tracks.items)
+            try:
+                playlist_tracks = spotify.playlist_items(playlist_id, market=MARKET, limit=PLAYLIST_LIMIT, offset=last_chunk_track_index)
+            except tk.TooManyRequests as err:
+                print(err.response)
+                print('aborting.')
+                exit()
+
+if len(to_add_tracks) > 0:
     last_chunk_track_index = 0
     to_add_track_length = len(to_add_tracks)
-    print('Found', to_add_track_length, 'tracks. Adding tracks to playlist...')
+    print('Found', to_add_track_length, 'new tracks. Adding tracks to playlist...')
     # we know there is at least 1 item to add
     last_item = min(to_add_track_length, PLAYLIST_LIMIT)
     
     while last_chunk_track_index < last_item:
         #print('index:', last_chunk_track_index, 'last:', last_item)
         track_chunk = to_add_tracks[last_chunk_track_index:last_item]
-        #print(len(track_chunk), track_chunk)
+        print('Adding tracks', last_chunk_track_index, 'through', last_item)
         try:
             spotify.playlist_add(conf[3], track_chunk)
             num_added += len(track_chunk)
@@ -217,19 +247,6 @@ if to_add_length > 0:
         last_chunk_track_index = last_item
         last_item += min(to_add_track_length - last_item, PLAYLIST_LIMIT)
 
-# Specified Playlists
-followed_playlists = get_user_playlists(sys.argv[1])
-if len(followed_playlists) > 0:
-    last_run_dt = datetime.combine(last_run, datetime.min.time())
-    for playlist_id in followed_playlists:
-        last_chunk_track_index = 0
-        playlist_tracks = spotify.playlist_items(playlist_id, market=MARKET, limit=PLAYLIST_LIMIT)
-        while len(playlist_tracks.items) > 0:
-            for playlist_track in playlist_tracks.items:
-                if playlist_track.added_at >= last_run_dt:
-                    print('added_at', playlist_track.added_at, 'track', playlist_track.track.uri)
-            last_chunk_track_index += len(playlist_tracks.items)
-            playlist_tracks = spotify.playlist_items(playlist_id, market=MARKET, limit=PLAYLIST_LIMIT, offset=last_chunk_track_index)
 
 print('Spot-Queuer Finished. Added', num_added, 'new songs.')
 
