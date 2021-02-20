@@ -1,4 +1,6 @@
-import datetime
+#import datetime as dt
+from datetime import date
+from datetime import datetime
 import sys
 import tekore as tk
 
@@ -15,9 +17,9 @@ def get_last_run(filename):
     date_split = f.read().split('-')
     f.close()
 
-    my_date = datetime.date(int(date_split[0]), int(date_split[1]), int(date_split[2]))
-    today = datetime.date.today()
-    #today = datetime.date(2011, 1, 1)
+    my_date = date(int(date_split[0]), int(date_split[1]), int(date_split[2]))
+    today = date.today()
+    #today = date(2011, 1, 1)
     
     if today <= my_date:
         print('Already ran Spot-Queuer today. Smallest API precision is Day, exiting early.')
@@ -52,6 +54,18 @@ def init_config(user_data_path):
     
     assert len(client_id) > 0 and len(client_secret) > 0 and len(redirect_uri) > 0 and len(listen_later) > 0
     return (client_id, client_secret, redirect_uri, listen_later)
+
+def get_user_playlists(user_data_path):
+    print('Loading User Playlists', user_data_path)  
+    f = open(user_data_path, 'r')
+    for line in f:
+        line = line.strip()
+        tokens = line.split('=')
+        if "playlists" == tokens[0]:
+            listen_later = tokens[1]
+            playlist_ids = listen_later.split(',')
+    f.close()
+    return playlist_ids
 
 
 ####################################################
@@ -115,7 +129,7 @@ while len(followed_artists.items) > 0:
                 if len(album_date_split) != 3:
                     if len(album_date_split) == 1:
                         print('  -%s date set to %s-1-1' % (album.name, album.release_date))
-                        album_date = datetime.date(int(album_date_split[0]), 1, 1)
+                        album_date = date(int(album_date_split[0]), 1, 1)
                     else:
                         print('  !%s date %s could not be determined' % (album.name, album.release_date))
                         # Check if this artist already has problems
@@ -126,9 +140,9 @@ while len(followed_artists.items) > 0:
                         error_albums.append(album.name)
                         continue
                 else:
-                    album_date = datetime.date(int(album_date_split[0]), int(album_date_split[1]), int(album_date_split[2]))
+                    album_date = date(int(album_date_split[0]), int(album_date_split[1]), int(album_date_split[2]))
                 #print('Album:', album_date, '-- run:', last_run)
-                if album_date > last_run:
+                if album_date >= last_run:
                     print('  *%s queueing' % (album.name))
                     to_add_albums.append((album.id, album.total_tracks, len(all_artists) - 1))
                 #print('hmm')
@@ -151,15 +165,20 @@ while len(followed_artists.items) > 0:
 to_add_length = len(to_add_albums)
 print('Artist scan complete. Found', to_add_length, 'new albums.')
 
+# Followed Artists
 num_added = 0
 if to_add_length > 0:
     print('Finding album tracks...')
     
+    album_count = 0
     for album_info in to_add_albums:
         album_id = album_info[0]
         album_track_num = album_info[1]
         target_artist = album_info[2]
         last_chunk_track_index = 0
+
+        album_count += 1
+        print('Processing album', album_count, 'of', to_add_length, 'with ID', album_id)
         
         while last_chunk_track_index < album_track_num:
             try:
@@ -197,6 +216,20 @@ if to_add_length > 0:
             exit()
         last_chunk_track_index = last_item
         last_item += min(to_add_track_length - last_item, PLAYLIST_LIMIT)
+
+# Specified Playlists
+followed_playlists = get_user_playlists(sys.argv[1])
+if len(followed_playlists) > 0:
+    last_run_dt = datetime.combine(last_run, datetime.min.time())
+    for playlist_id in followed_playlists:
+        last_chunk_track_index = 0
+        playlist_tracks = spotify.playlist_items(playlist_id, market=MARKET, limit=PLAYLIST_LIMIT)
+        while len(playlist_tracks.items) > 0:
+            for playlist_track in playlist_tracks.items:
+                if playlist_track.added_at >= last_run_dt:
+                    print('added_at', playlist_track.added_at, 'track', playlist_track.track.uri)
+            last_chunk_track_index += len(playlist_tracks.items)
+            playlist_tracks = spotify.playlist_items(playlist_id, market=MARKET, limit=PLAYLIST_LIMIT, offset=last_chunk_track_index)
 
 print('Spot-Queuer Finished. Added', num_added, 'new songs.')
 
