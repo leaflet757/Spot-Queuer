@@ -11,6 +11,7 @@ import tekore as tk
 # TODO:
 # Monstercat label exception
 # display stale playlists
+# check for track dups
 
 
 def get_last_run(filename):
@@ -71,6 +72,20 @@ def get_user_playlists(user_data_path):
     f.close()
     return playlist_ids
 
+def write_logs(artist_tracks, playlist_tracks):
+    f = open("info.log","w")
+    if len(artist_tracks) > 0:
+        f.write("--------------------------------\n")
+        f.write("Artist Tracks:\n")
+        for item in artist_tracks:
+            f.write("%s\n" % item)
+    if len(playlist_tracks) > 0:
+        f.write("--------------------------------\n")
+        f.write("Playlist Tracks:\n")
+        for item in playlist_tracks:
+            f.write("%s\n" % item)
+    # Close the file
+    f.close()
 
 ####################################################
 #........................MAIN......................#
@@ -99,6 +114,8 @@ listen_later_playlist = ''
 last_chunk_artist_id = ''
 last_chunk_album_index = 0
 last_chunk_track_index = 0
+logs_artist_tracks = list()
+logs_playlist_tracks = list()
 
 # Uncomment me to find playlist IDs
 #current_user = spotify.current_user()
@@ -175,7 +192,7 @@ if to_add_length > 0:
     for album_info in to_add_albums:
         album_id = album_info[0]
         album_track_num = album_info[1]
-        target_artist = album_info[2]
+        target_artist_id = album_info[2]
         last_chunk_track_index = 0
 
         album_count += 1
@@ -192,11 +209,12 @@ if to_add_length > 0:
             for track in tracks.items:
                 shouldAdd = False
                 for track_artist in track.artists:
-                    if track_artist.id == target_artist:
+                    if track_artist.id == target_artist_id:
                         shouldAdd = True
                 if shouldAdd:
                     print('*%s by %s' % (track.name, track_artist.name))
                     to_add_tracks.append(track.uri)
+                    logs_artist_tracks.append(('%s - %s' % (track_artist.name, track.name)).encode('utf8'))
             last_chunk_track_index += len(tracks.items)
     
 # Specified Playlists
@@ -217,7 +235,9 @@ if len(followed_playlists) > 0:
             for playlist_track in playlist_tracks.items:
                 if playlist_track.added_at >= last_run_dt:
                     print('  *%s queueing' % playlist_track.track.name)
-                    to_add_tracks.append(playlist_track.track.uri)
+                    #TODO: enable me when the world is ready
+                    #to_add_tracks.append(playlist_track.track.uri)
+                    logs_playlist_tracks.append(('%s - %s' % (playlist_full.name, playlist_track.track.name)).encode('utf8'))
             last_chunk_track_index += len(playlist_tracks.items)
             try:
                 playlist_tracks = spotify.playlist_items(playlist_id, market=MARKET, limit=PLAYLIST_LIMIT, offset=last_chunk_track_index)
@@ -257,3 +277,6 @@ if len(error_albums) > 0:
         print(artistPair[0])
         for index in artistPair[1]:
             print('  -%s' % error_albums[index])
+
+if len(logs_artist_tracks) > 0 or len(logs_playlist_tracks) > 0:
+    write_logs(logs_artist_tracks, logs_playlist_tracks)
