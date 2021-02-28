@@ -7,11 +7,17 @@ import tekore as tk
 
 # Example usage:
 # python src\spot-queuer.py C:\dev\projects\spot-queuer\user.data C:\dev\projects\spot-queuer\lastrun
+#
+# This will then open up a webbrowser window asking to allow the script access of your Spotify
+# account. Scroll all the way to the bottom without reading any of the TOS and click the accept
+# button. This will open a new page to example.com. Copy the entire URL of this page and paste
+# it into the terminal window.
 
 # TODO:
 # Monstercat label exception
 # display stale playlists
 # check for track dups
+# Playlist config with max adds file, json?
 
 
 def get_last_run(filename):
@@ -118,15 +124,15 @@ logs_artist_tracks = list()
 logs_playlist_tracks = list()
 
 # Uncomment me to find playlist IDs
-#current_user = spotify.current_user()
-#playlist_chunk = spotify.playlists(current_user.id, 20)
-#last_playlist = 0
-#while len(playlist_chunk.items) > 0:
-#    for playlist in playlist_chunk.items:
-#        print(playlist.name, playlist.id)
-#    last_playlist += len(playlist_chunk.items)
-#    playlist_chunk = spotify.playlists(current_user.id, 20, offset=last_playlist)
-#exit()
+current_user = spotify.current_user()
+playlist_chunk = spotify.playlists(current_user.id, 20)
+last_playlist = 0
+while len(playlist_chunk.items) > 0:
+    for playlist in playlist_chunk.items:
+        print(playlist.name, playlist.id)
+    last_playlist += len(playlist_chunk.items)
+    playlist_chunk = spotify.playlists(current_user.id, 20, offset=last_playlist)
+exit()
 
 followed_artists = spotify.followed_artists(limit=ARTIST_LIMIT)
 
@@ -235,7 +241,7 @@ if len(followed_playlists) > 0:
             for playlist_track in playlist_tracks.items:
                 if playlist_track.added_at >= last_run_dt:
                     print('  *%s queueing' % playlist_track.track.name)
-                    #TODO: enable me when the world is ready
+                    #Comment line below to not add playlist tracks
                     #to_add_tracks.append(playlist_track.track.uri)
                     logs_playlist_tracks.append(('%s - %s' % (playlist_full.name, playlist_track.track.name)).encode('utf8'))
             last_chunk_track_index += len(playlist_tracks.items)
@@ -268,6 +274,7 @@ if len(to_add_tracks) > 0:
         last_item += min(to_add_track_length - last_item, PLAYLIST_LIMIT)
 
 
+print('Last run was on %s. Writing new date %s' % (last_run, date.today()))
 print('Spot-Queuer Finished. Added', num_added, 'new songs.')
 
 if len(error_albums) > 0:
