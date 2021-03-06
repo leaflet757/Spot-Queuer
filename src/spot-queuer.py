@@ -14,11 +14,15 @@ import tekore as tk
 # it into the terminal window.
 
 # TODO:
-# Monstercat label exception
 # display stale playlists
 # check for track dups
 # Playlist config with max adds file, json?
 
+class PlaylistMeta:
+    def __init__(self):
+        self.name = ""
+        self.id = ""
+        self.limit = 0
 
 def get_last_run(filename):
     # If the date format is changed the my_date variable might need updating
