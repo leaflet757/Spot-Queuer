@@ -1,8 +1,9 @@
-#import datetime as dt
 from datetime import date
 from datetime import datetime
-import sys
+import json
 import tekore as tk
+import sys
+import requests
 
 
 # Example usage:
@@ -23,6 +24,10 @@ class PlaylistMeta:
         self.name = ""
         self.id = ""
         self.limit = 0
+    def __str__(self):
+        return f'PlaylistMeta({self.name},{self.id},{self.limit})'
+    def Unbounded(self):
+        return self.limit == -1
 
 def get_last_run(filename):
     # If the date format is changed the my_date variable might need updating
@@ -97,6 +102,19 @@ def write_logs(artist_tracks, playlist_tracks):
     # Close the file
     f.close()
 
+def get_playlist_meta(playlist_meta_path):
+    playlist_meta = dict()
+    f = open(playlist_meta_path, 'r')
+    playlist_meta_json = json.load(f)
+    for playlist_info in playlist_meta_json['playlists']:
+        meta = PlaylistMeta()
+        meta.id = playlist_info['id']
+        meta.name = playlist_info['name']
+        meta.limit = playlist_info['limit']
+        playlist_meta[meta.id] = meta
+    f.close()
+    return playlist_meta
+
 ####################################################
 #........................MAIN......................#
 ####################################################
@@ -128,15 +146,15 @@ logs_artist_tracks = list()
 logs_playlist_tracks = list()
 
 # Uncomment me to find playlist IDs
-current_user = spotify.current_user()
-playlist_chunk = spotify.playlists(current_user.id, 20)
-last_playlist = 0
-while len(playlist_chunk.items) > 0:
-    for playlist in playlist_chunk.items:
-        print(playlist.name, playlist.id)
-    last_playlist += len(playlist_chunk.items)
-    playlist_chunk = spotify.playlists(current_user.id, 20, offset=last_playlist)
-exit()
+#current_user = spotify.current_user()
+#playlist_chunk = spotify.playlists(current_user.id, 20)
+#last_playlist = 0
+#while len(playlist_chunk.items) > 0:
+#    for playlist in playlist_chunk.items:
+#        print(playlist.name, playlist.id)
+#    last_playlist += len(playlist_chunk.items)
+#    playlist_chunk = spotify.playlists(current_user.id, 20, offset=last_playlist)
+#exit()
 
 followed_artists = spotify.followed_artists(limit=ARTIST_LIMIT)
 
@@ -147,7 +165,7 @@ while len(followed_artists.items) > 0:
         try:
             artist_albums = spotify.artist_albums(artist_id=artist.id, market=MARKET, limit=ALBUM_LIMIT)
         except tk.TooManyRequests as err:
-            print(err.response)
+            print(err.response.headers['retry-after'])
             print('aborting.')
             exit()
         last_chunk_album_index = 0
@@ -179,14 +197,14 @@ while len(followed_artists.items) > 0:
             try:
                 artist_albums = spotify.artist_albums(artist_id=artist.id, market=MARKET, limit=ALBUM_LIMIT, offset=last_chunk_album_index)
             except tk.TooManyRequests as err:
-                print(err.response)
+                print(err.response.headers['retry-after'])
                 print('aborting.')
                 exit()
     last_chunk_artist_id = followed_artists.items[-1].id
     try:
         followed_artists = spotify.followed_artists(limit=ARTIST_LIMIT, after=last_chunk_artist_id)
     except tk.TooManyRequests as err:
-        print(err.response)
+        print(err.response.headers['retry-after'])
         print('aborting.')
         exit()
 
@@ -213,7 +231,7 @@ if to_add_length > 0:
             try:
                 tracks = spotify.album_tracks(album_id, market=MARKET, limit=TRACK_LIMIT, offset=last_chunk_track_index)
             except tk.TooManyRequests as err:
-                print(err.response)
+                print(err.response.headers['retry-after'])
                 print('aborting.')
                 exit()
             for track in tracks.items:
@@ -229,6 +247,7 @@ if to_add_length > 0:
     
 # Specified Playlists
 followed_playlists = get_user_playlists(sys.argv[1])
+playlist_meta = get_playlist_meta(sys.argv[3])
 if len(followed_playlists) > 0:
     last_run_dt = datetime.combine(last_run, datetime.min.time())
     for playlist_id in followed_playlists:
@@ -237,22 +256,28 @@ if len(followed_playlists) > 0:
             playlist_full = spotify.playlist(playlist_id, market=MARKET)
             playlist_tracks = spotify.playlist_items(playlist_id, market=MARKET, limit=PLAYLIST_LIMIT)
         except tk.TooManyRequests as err:
-            print(err.response)
+            print(err.response.headers['retry-after'])
             print('aborting.')
             exit()
         print('>>>%s' % playlist_full.name)
-        while len(playlist_tracks.items) > 0:
+        meta = playlist_meta[playlist_id]
+        added_count = 0
+        while len(playlist_tracks.items) > 0 and (added_count < meta.limit or meta.Unbounded()):
             for playlist_track in playlist_tracks.items:
+                if not (added_count < meta.limit or meta.Unbounded()):
+                    print('hit limit for', meta.name)
+                    break
                 if playlist_track.added_at >= last_run_dt:
                     print('  *%s queueing' % playlist_track.track.name)
-                    #Comment line below to not add playlist tracks
+                    # Comment line below to not add playlist tracks
                     #to_add_tracks.append(playlist_track.track.uri)
+                    added_count += 1
                     logs_playlist_tracks.append(('%s - %s' % (playlist_full.name, playlist_track.track.name)).encode('utf8'))
             last_chunk_track_index += len(playlist_tracks.items)
             try:
                 playlist_tracks = spotify.playlist_items(playlist_id, market=MARKET, limit=PLAYLIST_LIMIT, offset=last_chunk_track_index)
             except tk.TooManyRequests as err:
-                print(err.response)
+                print(err.response.headers['retry-after'])
                 print('aborting.')
                 exit()
 
@@ -271,7 +296,7 @@ if len(to_add_tracks) > 0:
             spotify.playlist_add(conf[3], track_chunk)
             num_added += len(track_chunk)
         except tk.TooManyRequests as err:
-            print(err.response)
+            print(err.response.headers['retry-after'])
             print('aborting.')
             exit()
         last_chunk_track_index = last_item
