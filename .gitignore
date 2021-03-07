@@ -1,4 +1,8 @@
 # User Files
 user.data
 playlists.data
+/logs/
 info.log
+
+# vscode
+/.vscode/**
