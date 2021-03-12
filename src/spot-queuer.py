@@ -20,9 +20,29 @@ import time
 # account. Scroll all the way to the bottom without reading any of the TOS and click the accept
 # button. This will open a new page to example.com. Copy the entire URL of this page and paste
 # it into the terminal window.
+#
+# The <user.data> file must be in JSON format and be of the form:
+# {
+#     "user":
+#     {
+#         "client_id":"xxxxxxxxxx",
+#         "client_secret":"xxxxxxxxxxx",
+#         "redirect_uri":"https://example.com/callback",
+#         "listen_later":"xxxxxxxxxx"
+#     },
+#     "playlists":
+#     [  
+#         {
+#             "name":"Human Music Playlist",
+#             "id":"xxxxxxxxxx",
+#             "limit":"-1"
+#         },
+#     ]
+# }
 
 # TODO:
 # display stale playlists
+# Server Error 500
 # check for track dups
 # pick top rated songs from playlists
 # sort sets into separate playlist
@@ -54,22 +74,39 @@ class Config():
     def __str__(self):
         return f'Config({self.client_id},{self.redirect_uri})'
 
+class Cache:
+    def __init__(self):
+        self.track_datas = list()
+        self.track_datas_map = dict() #id, index
+        self.album_datas = list()
+        self.album_datas_map = dict() #id, index
+        self.playlist_datas = list()
+        self.playlist_datas_map = dict() #id, index
+
 class Playlist:
     def __init__(self):
         self.name = ""
         self.id = ""
         self.limit = 0
+        self.tracks = list()
     def __str__(self):
         return f'Playlist({self.name},{self.id},{self.limit})'
     def Unbounded(self):
         return self.limit == -1
+    def total_tracks(self):
+        return len(self.tracks)
 
 class Album:
     def __init__(self):
         self.name = ""
         self.id = ""
-        self.total_tracks = 0
+        self.artist_id = ""
         self.release_date = date(2021,1,1)
+        self.tracks = list()
+    def __str__(self):
+        return f'Album({self.name},{self.id})'
+    def total_tracks(self):
+        return len(self.tracks)
 
 class Track:
     def __init__(self):
@@ -80,6 +117,8 @@ class Track:
         self.playlist = -1
         self.score = 0
         self.datetime = datetime()
+    def __str__(self):
+        return f'Track({self.name} by {self.artist})'
 
 ####################################################
 #.................. API Functions .................#
@@ -95,8 +134,8 @@ def print_all_playlists(spotify):
             print(playlist.name, playlist.id)
         last_playlist += len(playlist_chunk.items)
         playlist_chunk = spotify.playlists(current_user.id, 20, offset=last_playlist)
-    exit()
     print('-----------------------------------------------')
+    exit()
 
 def add_to_listen_to_later(spotify, to_add_tracks, listen_later, PLAYLIST_LIMIT):
     last_chunk_track_index = 0
@@ -105,6 +144,7 @@ def add_to_listen_to_later(spotify, to_add_tracks, listen_later, PLAYLIST_LIMIT)
     # we know there is at least 1 item to add
     last_item = min(to_add_track_length, PLAYLIST_LIMIT)
     
+    num_added = 0
     while last_chunk_track_index < last_item:
         #print('index:', last_chunk_track_index, 'last:', last_item)
         track_chunk = to_add_tracks[last_chunk_track_index:last_item]
@@ -119,23 +159,29 @@ def add_to_listen_to_later(spotify, to_add_tracks, listen_later, PLAYLIST_LIMIT)
         num_added += len(track_chunk)
         last_chunk_track_index = last_item
         last_item += min(to_add_track_length - last_item, PLAYLIST_LIMIT)
+    
+    return num_added
 
 def check_last_run_quit(conf):
     if conf.today_date <= conf.last_run_date:
         print('Already ran Spot-Queuer today. Smallest API precision is Day, exiting early.')
         exit()
 
-def scan_artist_tracks(spotfiy, conf, to_add_tracks, error_artists, error_albums):
+def scan_artist_tracks(spotfiy, conf, cache, to_add_tracks, error_artists, error_albums):
     to_add_albums = list()
     all_artists = list()
+
     last_chunk_album_index = 0
     last_chunk_track_index = 0
     last_chunk_artist_id = ''
+    
     followed_artists = spotify.followed_artists(limit=conf.ARTIST_LIMIT)
+    
     while len(followed_artists.items) > 0:
         for artist in followed_artists.items:
             print('>>>%s' % artist.name)
             all_artists.append(artist.id)
+            
             while True:
                 try:
                     artist_albums = spotify.artist_albums(artist_id=artist.id, market=conf.MARKET, limit=conf.ALBUM_LIMIT)
@@ -143,11 +189,14 @@ def scan_artist_tracks(spotfiy, conf, to_add_tracks, error_artists, error_albums
                 except tk.TooManyRequests as err:
                     sleep_amount = int(err.response.headers['retry-after'])
                     retry_sleep(sleep_amount)
+            
             last_chunk_album_index = 0
+            
             while len(artist_albums.items) > 0:
                 for album in artist_albums.items:
                     # increment the index regardless if we can add the album
                     album_date_split = album.release_date.split('-')
+                    
                     if len(album_date_split) != 3:
                         if len(album_date_split) == 1:
                             #print('  -%s date set to %s-1-1' % (album.name, album.release_date))
@@ -163,11 +212,28 @@ def scan_artist_tracks(spotfiy, conf, to_add_tracks, error_artists, error_albums
                             continue
                     else:
                         album_date = date(int(album_date_split[0]), int(album_date_split[1]), int(album_date_split[2]))
-                    if album_date >= conf.last_run_date:
-                        print('  *%s queueing' % (album.name))
-                        to_add_albums.append((album.id, album.total_tracks, len(all_artists) - 1))
+                    
+                    # Create the Album Data
+                    albumData = Album()
+                    albumData.name = album.name
+                    albumData.id = album.id
+                    albumData.total_tracks = album.total_tracks
+                    albumData.release_date = album_date
+                    albumData.artist_id = artist.id
+                    
+                    # Add Album to cache
+                    albumDataIndex = len(cache.album_datas)
+                    cache.album_datas_map[album.id] = albumDataIndex
+                    cache.album_datas.append(albumData)
+
+                    if albumData.release_date >= conf.last_run_date:
+                        print('  *%s queueing' % (albumData.name))
+                        to_add_albums.append(albumDataIndex)
+                    
+
                 last_chunk_album_index += len(artist_albums.items)
                 #print('last chunk', last_chunk_album_index, 'num itesm', len(artist_albums.items))
+
                 while True: # TODO boooo
                     try:
                         artist_albums = spotify.artist_albums(artist_id=artist.id, market=conf.MARKET, limit=conf.ALBUM_LIMIT, offset=last_chunk_album_index)
@@ -175,7 +241,9 @@ def scan_artist_tracks(spotfiy, conf, to_add_tracks, error_artists, error_albums
                     except tk.TooManyRequests as err:
                         sleep_amount = int(err.response.headers['retry-after'])
                         retry_sleep(sleep_amount)
+
         last_chunk_artist_id = followed_artists.items[-1].id
+
         while True: # TODO boo
             try:
                 followed_artists = spotify.followed_artists(limit=conf.ARTIST_LIMIT, after=last_chunk_artist_id)
@@ -188,15 +256,15 @@ def scan_artist_tracks(spotfiy, conf, to_add_tracks, error_artists, error_albums
     print('Artist scan complete. Found', to_add_length, 'new albums.')
 
     # Now cull any artist tracks that are not the ones we follow
-    num_added = 0
     if to_add_length > 0:
         print('Finding album tracks...')
         
         album_count = 0
-        for album_info in to_add_albums:
-            album_id = album_info[0]
-            album_track_num = album_info[1]
-            target_artist_id = album_info[2]
+        for album_index in to_add_albums:
+            album_data = cache.album_datas[album_index]
+            album_id = album_data.id
+            album_track_num = album_data.total_tracks
+            target_artist_id = album_data.artist_id
             last_chunk_track_index = 0
 
             album_count += 1
@@ -284,10 +352,11 @@ def init_last_run(conf):
     conf.last_run_date = parse_date_string(f.read())
     f.close()
     
-def set_last_run(filename, date_format, today):
-    date_str = today.strftime(date_format)
-    print('Last run was on %s. Writing new date %s' % (my_date, today))
-    f = open(filename,"w")
+def set_last_run(conf):
+    today = date.today()
+    date_str = today.strftime(conf.DATE_FORMAT)
+    print('Last run was on %s. Writing new date %s' % (conf.last_run_date, date_str))
+    f = open(conf.last_run_path,"w")
     f.write(date_str)
     f.close()
 
@@ -373,13 +442,8 @@ check_last_run_quit(conf)
 
 print('Authentication complete.')
 
-# Cached Data TODO
-track_datas = list()
-track_datas_map = dict()
-album_datas = list()
-album_datas_map = dict()
-playlist_datas = list()
-playlist_datas_map = dict()
+# Cached Data
+cache = Cache()
 
 # List of Tracks IDs that will be added to the watch later playlist
 to_add_tracks = list()
@@ -392,19 +456,20 @@ error_albums = list()
 
 # Scan Followed Artists
 if conf.scan_artists:
-    scan_artist_tracks(spotify, conf, to_add_tracks, error_artists, error_albums)
+    scan_artist_tracks(spotify, conf, cache, to_add_tracks, error_artists, error_albums)
     
 # Scan Specified Playlists
 if len(conf.playlist_meta.values()) > 0 and conf.scan_playlists:
     scan_followed_playlists(spotify, conf)
 
 # If there were any tracks found that were new, add them to our playlist
+num_added = 0
 if len(to_add_tracks) > 0:
-    add_to_listen_to_later(spotify, to_add_tracks, conf.listen_later, conf.PLAYLIST_LIMIT)
+    num_added = add_to_listen_to_later(spotify, to_add_tracks, conf.listen_later, conf.PLAYLIST_LIMIT)
 
 # We're done here, now store when we last ran
-print('Last run was on %s. Writing new date %s' % (conf.last_run_date, date.today()))
-set_last_run(conf.last_run_path, conf.DATE_FORMAT, conf.today_date)
+set_last_run(conf)
+
 print('Spot-Queuer Finished. Added', num_added, 'new songs.')
 
 if len(error_albums) > 0:
