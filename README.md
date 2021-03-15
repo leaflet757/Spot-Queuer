@@ -35,6 +35,4 @@ TODO:
 display stale playlists
 Server Error 500
 check for track dups, uri check done - wat else?
-pick top rated songs from playlists
-sort sets into separate playlist
 clean up this shitty code

@@ -268,6 +268,7 @@ def scan_artist_tracks(spotfiy, conf, cache, to_add_tracks, logs_artist_tracks):
                         track_data.uri = track.uri
                         track_data.album = album_index
                         track_data.playlist = -1 # not from playlist
+                        #track_data.score = track.popularity Error: SimpleTrack object has no attr 'popularity'
                         #track_data.datetime = xx # is this needed?
 
                         # Add track to the map
@@ -286,10 +287,13 @@ def scan_artist_tracks(spotfiy, conf, cache, to_add_tracks, logs_artist_tracks):
 
 def scan_followed_playlists(spotify, conf, cache, to_add_tracks, logs_playlist_tracks):
     
+    sort_playlist_tracks = list()
+
     # Get the datetime of the current day
     last_run_dt = datetime.combine(conf.last_run_date_playlist, datetime.min.time())
     
     for i in range(len(cache.playlist_datas)):
+        sort_playlist_tracks.clear()
         playlist_data = cache.playlist_datas[i]
         last_chunk_track_index = 0
 
@@ -312,12 +316,8 @@ def scan_followed_playlists(spotify, conf, cache, to_add_tracks, logs_playlist_t
                     print('hit limit for', playlist_data.name)
                     break
                 
-                # playlist_track.track.popularity
                 if playlist_track.added_at >= last_run_dt and playlist_track.track.uri not in cache.playlist_datas_map:
                     print('  *%s queueing' % playlist_track.track.name)
-                    
-                    # Comment line below to not add playlist tracks
-                    to_add_tracks.append(playlist_track.track.uri)
                     
                     # Create the Track and add to Album
                     track_data = Track()
@@ -326,7 +326,12 @@ def scan_followed_playlists(spotify, conf, cache, to_add_tracks, logs_playlist_t
                     track_data.uri = playlist_track.track.uri
                     track_data.album = -1
                     track_data.playlist = i
+                    track_data.score = playlist_track.track.popularity
                     #track_data.datetime = xx # is this needed?
+                    
+                    # Queue up the Playlist Track
+                    #to_add_tracks.append(playlist_track.track.uri)
+                    sort_playlist_tracks.append(len(cache.track_datas))
 
                     # Add track to the map
                     cache.track_datas_map[track_data.uri] = len(cache.track_datas)
@@ -345,6 +350,11 @@ def scan_followed_playlists(spotify, conf, cache, to_add_tracks, logs_playlist_t
                 except tk.TooManyRequests as err:
                     sleep_amount = int(err.response.headers['retry-after'])
                     retry_sleep(sleep_amount)
+
+        # Now Sort the tracks with the best score
+        sort_playlist_tracks.sort(key=lambda t: cache.track_datas[t].score, reverse=True)
+        for item in sort_playlist_tracks:
+            to_add_tracks.append(cache.track_datas[item].uri)
 
 ####################################################
 #..................... Utility ......................#
@@ -444,7 +454,7 @@ def write_logs(artist_tracks, playlist_tracks, run_date_artist, run_date_playlis
     f.close()
 
 def retry_sleep(num_seconds):
-    print('Spotfiy rate limit hit. Retry in', num_seconds, 'seconds.')
+    print('\nSpotfiy rate limit hit. Retry in', num_seconds, 'seconds.\n')
     time.sleep(num_seconds)
 
 ####################################################
