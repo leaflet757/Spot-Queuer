@@ -27,8 +27,10 @@ class Config():
         self.client_id = ""
         self.client_secret = ""
         self.redirect_uri = ""
-        self.listen_later = ""
         self.last_run_path = ""
+        self.listen_later = ""
+        self.sets = ""
+        self.compilations = ""
     def __str__(self):
         return f'Config({self.client_id},{self.redirect_uri})'
 
@@ -42,6 +44,14 @@ class Cache:
         self.playlist_datas_map = dict() #id, index
         self.artist_datas = list()
         self.artist_datas_map = dict() #id, index
+
+class AlbumAdder:
+    def __init__(self):
+        self.listen_later = list()
+        self.sets = list()
+        self.compilations = list()
+    def has_tracks(self):
+        return len(self.listen_later) > 0 or len(self.sets) > 0 or len(self.compilations) > 0
 
 class Artist:
     def __init__(self):
@@ -68,6 +78,7 @@ class Album:
     def __init__(self):
         self.name = ""
         self.id = ""
+        self.type = ""
         self.artist_id = -1
         self.release_date = date(2021,1,1)
         self.tracks = list()
@@ -75,6 +86,12 @@ class Album:
         return f'Album({self.name},{self.id})'
     def total_tracks(self):
         return len(self.tracks)
+    def is_comp(self):
+        return self.type == 'compilation'
+    def is_album(self):
+        return self.type == 'album'
+    def is_single(self):
+        return self.type == 'single'
 
 class Track:
     def __init__(self):
@@ -134,7 +151,7 @@ def check_last_run_quit(today, last_run):
         print('Already ran Spot-Queuer today. Smallest API precision is Day, exiting early.')
         exit()
 
-def scan_artist_tracks(spotfiy, conf, cache, to_add_tracks, logs_artist_tracks):
+def scan_artist_tracks(spotfiy, conf, cache, adder, logs_artist_tracks):
     to_add_albums = list()
     last_chunk_album_index = 0
     last_chunk_track_index = 0
@@ -171,6 +188,14 @@ def scan_artist_tracks(spotfiy, conf, cache, to_add_tracks, logs_artist_tracks):
             while len(artist_albums.items) > 0:
                 for album in artist_albums.items:
                     
+                    # Some 'Compilation' spotify albums will be marked as compilation
+                    # even though we really want them in listen later playlist. But 
+                    # some compilations are actual compilations of many artists. So if
+                    # this album has a bunch of artists, its most likely a compilation.
+                    # This will probably skip cool older songs tho :'(
+                    if album.album_group == 'appears_on':
+                        continue
+
                     # Parse Date Str
                     album_date_split = album.release_date.split('-')
                     if len(album_date_split) != 3:
@@ -189,6 +214,7 @@ def scan_artist_tracks(spotfiy, conf, cache, to_add_tracks, logs_artist_tracks):
                         album_data.id = album.id
                         album_data.total_tracks = album.total_tracks
                         album_data.release_date = album_date
+                        album_data.type = album.album_type
                         assert(artist.id in cache.artist_datas_map)
                         album_data.artist_id = cache.artist_datas_map[artist.id]
                         
@@ -278,14 +304,20 @@ def scan_artist_tracks(spotfiy, conf, cache, to_add_tracks, logs_artist_tracks):
                         
                         # Add all artist tracks to the 'to add' list
                         num_artist_tracks += 1
-                        to_add_tracks.append(track.uri)
+
+                        # Find the Playlist to add it to
+                        if track.duration_ms >= 1860000: # 31 mins
+                            adder.sets.append(track.uri)
+                        else:
+                            adder.listen_later.append(track.uri)
+
                         logs_artist_tracks.append(('%s - %s' % (track_artist.name, track.name)).encode('utf8'))
                 
                 last_chunk_track_index += len(tracks.items)
     
     return num_artist_tracks
 
-def scan_followed_playlists(spotify, conf, cache, to_add_tracks, logs_playlist_tracks):
+def scan_followed_playlists(spotify, conf, cache, adder, logs_playlist_tracks):
     
     sort_playlist_tracks = list()
 
@@ -354,7 +386,7 @@ def scan_followed_playlists(spotify, conf, cache, to_add_tracks, logs_playlist_t
         # Now Sort the tracks with the best score
         sort_playlist_tracks.sort(key=lambda t: cache.track_datas[t].score, reverse=True)
         for item in sort_playlist_tracks:
-            to_add_tracks.append(cache.track_datas[item].uri)
+            adder.listen_later.append(cache.track_datas[item].uri)
 
 ####################################################
 #..................... Utility ......................#
@@ -413,6 +445,8 @@ def init_config(user_data_path, last_run_path):
     c.client_secret = user['client_secret']
     c.redirect_uri = user['redirect_uri']
     c.listen_later = user['listen_later']
+    c.compilations = user['compilation']
+    c.sets = user['sets']
     c.last_run_path = last_run_path
     
     f.close()
@@ -497,7 +531,7 @@ cache = Cache()
 init_playlist_cache(user_data_path, cache)
 
 # List of Tracks IDs that will be added to the watch later playlist
-to_add_tracks = list()
+adder = AlbumAdder()
 
 # Logs
 logs_artist_tracks = list()
@@ -506,17 +540,29 @@ logs_playlist_tracks = list()
 # Scan Followed Artists
 num_artist_tracks = 0
 if conf.scan_artists:
-    num_artist_tracks = scan_artist_tracks(spotify, conf, cache, to_add_tracks, logs_artist_tracks)
+    num_artist_tracks = scan_artist_tracks(spotify, conf, cache, adder, logs_artist_tracks)
     
 # Scan Specified Playlists
 num_playlist_tracks = 0
 if len(cache.playlist_datas) > 0 and conf.scan_playlists:
-    num_playlist_tracks = scan_followed_playlists(spotify, conf, cache, to_add_tracks, logs_playlist_tracks)
+    num_playlist_tracks = scan_followed_playlists(spotify, conf, cache, adder, logs_playlist_tracks)
 
 # If there were any tracks found that were new, add them to our playlist
-tracks_added = 0
-if len(to_add_tracks) > 0:
-    tracks_added = add_to_listen_to_later(spotify, to_add_tracks, conf.listen_later, conf.PLAYLIST_LIMIT)
+total_tracks_added = 0
+if len(adder.listen_later) > 0 and len(conf.listen_later) > 0:
+    listen_tracks_added = add_to_listen_to_later(spotify, adder.listen_later, conf.listen_later, conf.PLAYLIST_LIMIT)
+    total_tracks_added += listen_tracks_added
+    print('  !Added', listen_tracks_added, 'to Listen Later playlist.')
+
+if len(adder.sets) > 0 and len(conf.sets) > 0:
+    sets_tracks_added = add_to_listen_to_later(spotify, adder.sets, conf.sets, conf.PLAYLIST_LIMIT)
+    total_tracks_added += sets_tracks_added
+    print('  !Added', sets_tracks_added, 'to Sets playlist.')
+    
+if len(adder.compilations) > 0 and len(conf.compilations) > 0:
+    comp_tracks_added = add_to_listen_to_later(spotify, adder.compilations, conf.compilations, conf.PLAYLIST_LIMIT)
+    total_tracks_added += comp_tracks_added
+    print('  !Added', comp_tracks_added, 'to Compilations playlist.')
 
 if len(logs_artist_tracks) > 0 or len(logs_playlist_tracks) > 0:
     write_logs(logs_artist_tracks, logs_playlist_tracks, conf.last_run_date_artist, conf.last_run_date_playlist)
@@ -524,4 +570,4 @@ if len(logs_artist_tracks) > 0 or len(logs_playlist_tracks) > 0:
 # We're done here, now store when we last ran
 set_last_run(conf)
 
-print('Spot-Queuer Finished. Added', tracks_added, 'new songs.')
+print('Spot-Queuer Finished. Added', total_tracks_added, 'new songs.')

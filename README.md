@@ -36,3 +36,4 @@ display stale playlists
 Server Error 500
 check for track dups, uri check done - wat else?
 clean up this shitty code
+shuffle artist tracks
