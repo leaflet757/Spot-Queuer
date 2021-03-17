@@ -3,6 +3,7 @@ from datetime import datetime
 import json
 import os, os.path
 import tekore as tk
+import random
 import sys
 import time
 
@@ -124,14 +125,17 @@ def print_all_playlists(spotify):
 
 def add_to_listen_to_later(spotify, to_add_tracks, listen_later, PLAYLIST_LIMIT):
     last_chunk_track_index = 0
-    to_add_track_length = len(to_add_tracks)
+    shuffle_tracks = to_add_tracks.copy()
+    # shuffle da tracks
+    random.shuffle(shuffle_tracks)
+    to_add_track_length = len(shuffle_tracks)
     print('Found', to_add_track_length, 'new tracks. Adding tracks to playlist...')
     # we know there is at least 1 item to add
     last_item = min(to_add_track_length, PLAYLIST_LIMIT)
     
     num_added = 0
     while last_chunk_track_index < last_item:
-        track_chunk = to_add_tracks[last_chunk_track_index:last_item]
+        track_chunk = shuffle_tracks[last_chunk_track_index:last_item]
         print('Adding tracks', last_chunk_track_index, 'through', last_item)
         while True: # TODO boo
             try:
