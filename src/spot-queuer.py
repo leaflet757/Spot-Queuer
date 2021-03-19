@@ -283,13 +283,21 @@ def scan_artist_tracks(spotfiy, conf, cache, adder, logs_artist_tracks):
                 
                 for track in tracks.items:
                     
-                    hasArtist = False
-                    for track_artist in track.artists:
-                        if track_artist.id == target_artist_id:
-                            hasArtist = True
+                    # Some Artists will release radio shows in an album. Sometimes we want to hear those 
+                    # artists we dont follow. This 'should' be ok now that we're skipping 'appears on' albums
+                    hasArtist = True
+                    #hasArtist = False
+                    #for track_artist in track.artists:
+                    #    if track_artist.id == target_artist_id:
+                    #        hasArtist = True
+
+                    # Skip tracks that are 'intro' tracks that dont really have much music content
+                    # 80s = 80000ms
+                    if track.duration_ms <= 86000:
+                        continue
                     
                     if hasArtist and not track.uri in cache.artist_datas_map:
-                        print('*%s by %s adding' % (track.name, track_artist.name))
+                        print('  *%s by %s adding' % (track.name, track_artist.name))
                         
                         # Create the Track and add to Album
                         track_data = Track()
@@ -353,7 +361,7 @@ def scan_followed_playlists(spotify, conf, cache, adder, logs_playlist_tracks):
                     break
                 
                 if playlist_track.added_at >= last_run_dt and playlist_track.track.uri not in cache.playlist_datas_map:
-                    print('  *%s queueing' % playlist_track.track.name)
+                    print('  *%s adding' % playlist_track.track.name)
                     
                     # Create the Track and add to Album
                     track_data = Track()
@@ -553,21 +561,25 @@ if len(cache.playlist_datas) > 0 and conf.scan_playlists:
 
 # If there were any tracks found that were new, add them to our playlist
 total_tracks_added = 0
+# Listen Later
 if len(adder.listen_later) > 0 and len(conf.listen_later) > 0:
     listen_tracks_added = add_to_listen_to_later(spotify, adder.listen_later, conf.listen_later, conf.PLAYLIST_LIMIT)
     total_tracks_added += listen_tracks_added
-    print('  !Added', listen_tracks_added, 'to Listen Later playlist.')
+    print('  *Added', listen_tracks_added, 'to Listen Later playlist.')
 
+# Sets
 if len(adder.sets) > 0 and len(conf.sets) > 0:
     sets_tracks_added = add_to_listen_to_later(spotify, adder.sets, conf.sets, conf.PLAYLIST_LIMIT)
     total_tracks_added += sets_tracks_added
-    print('  !Added', sets_tracks_added, 'to Sets playlist.')
+    print('  *Added', sets_tracks_added, 'to Sets playlist.')
     
+# compilations
 if len(adder.compilations) > 0 and len(conf.compilations) > 0:
     comp_tracks_added = add_to_listen_to_later(spotify, adder.compilations, conf.compilations, conf.PLAYLIST_LIMIT)
     total_tracks_added += comp_tracks_added
-    print('  !Added', comp_tracks_added, 'to Compilations playlist.')
+    print('  *Added', comp_tracks_added, 'to Compilations playlist.')
 
+# Logs
 if len(logs_artist_tracks) > 0 or len(logs_playlist_tracks) > 0:
     write_logs(logs_artist_tracks, logs_playlist_tracks, conf.last_run_date_artist, conf.last_run_date_playlist)
 
