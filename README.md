@@ -1,5 +1,5 @@
 Example usage:
-python src\spot-queuer.py <user.data> <lastrun> [options]
+python src\spot-queuer.py <user.data> <lastrun> <logs_path> [options]
 
 [options]
 -a : scan artists

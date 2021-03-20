@@ -29,6 +29,7 @@ class Config():
         self.client_secret = ""
         self.redirect_uri = ""
         self.last_run_path = ""
+        self.logs_path = ""
         self.listen_later = ""
         self.sets = ""
         self.compilations = ""
@@ -352,16 +353,10 @@ def scan_followed_playlists(spotify, conf, cache, adder, logs_playlist_tracks):
         
         print('>>>%s' % playlist_full.name)
 
-        added_count = 0
-        while len(playlist_tracks.items) > 0 and (added_count < playlist_data.limit or playlist_data.Unbounded()):
+        while len(playlist_tracks.items) > 0:
             for playlist_track in playlist_tracks.items:
                 
-                if not (added_count < playlist_data.limit or playlist_data.Unbounded()):
-                    print('hit limit for', playlist_data.name)
-                    break
-                
                 if playlist_track.added_at >= last_run_dt and playlist_track.track.uri not in cache.playlist_datas_map:
-                    print('  *%s adding' % playlist_track.track.name)
                     
                     # Create the Track and add to Album
                     track_data = Track()
@@ -382,7 +377,6 @@ def scan_followed_playlists(spotify, conf, cache, adder, logs_playlist_tracks):
                     cache.track_datas.append(track_data)
                     #print('TrackDataCount:', len(cache.track_datas))
 
-                    added_count += 1
                     logs_playlist_tracks.append(('%s - %s' % (playlist_full.name, playlist_track.track.name)).encode('utf8'))
             
             last_chunk_track_index += len(playlist_tracks.items)
@@ -396,9 +390,15 @@ def scan_followed_playlists(spotify, conf, cache, adder, logs_playlist_tracks):
                     retry_sleep(sleep_amount)
 
         # Now Sort the tracks with the best score
+        added_count = 0
         sort_playlist_tracks.sort(key=lambda t: cache.track_datas[t].score, reverse=True)
         for item in sort_playlist_tracks:
+            if not (added_count < playlist_data.limit or playlist_data.Unbounded()):
+                print('!!!Hit limit %d for %s' % (playlist_data.limit, playlist_data.name))
+                break
+            print('  *%s adding' % cache.track_datas[item].name)
             adder.listen_later.append(cache.track_datas[item].uri)
+            added_count += 1
 
 ####################################################
 #..................... Utility ......................#
@@ -415,9 +415,9 @@ def check_optional_arg(index, argv, conf):
         storeArtist = False
         storePlaylist = False
         for x in range(len(argv)):
-            if argv[index] == '-a':
+            if argv[x] == '-a':
                 storeArtist = True
-            if argv[index] == '-p':
+            if argv[x] == '-p':
                 storePlaylist = True
         newDate = parse_date_string(argv[index + 1])
         if storeArtist:
@@ -425,7 +425,7 @@ def check_optional_arg(index, argv, conf):
             conf.last_run_date_artist = newDate
         if storePlaylist:
             print('Overwriting last run playlist date %s. Writing new playlist date %s.' % (conf.last_run_date_playlist, newDate))
-            conf.last_run_date_playlist = newDateP
+            conf.last_run_date_playlist = newDate
 
 def parse_date_string(date_str):
     # If the date format is changed the return might need updating    
@@ -451,17 +451,17 @@ def set_last_run(conf):
         f.write(date_str)
         f.write(",")
     else: # write the date from before
-        f.write(conf.last_run_date_artist)
+        f.write(conf.last_run_date_artist.strftime(conf.DATE_FORMAT))
         f.write(",")
     # write the new playlist date
     if conf.scan_playlists:
         print('Last playlist run %s. Writing new date %s.' % (conf.last_run_date_playlist, date_str))
         f.write(date_str)
     else: # write the date from before
-        f.write(conf.last_run_date_playlist)
+        f.write(conf.last_run_date_playlist.strftime(conf.DATE_FORMAT))
     f.close()
 
-def init_config(user_data_path, last_run_path):
+def init_config(user_data_path, last_run_path, logs_path):
     print('Loading User Config', user_data_path)
     
     c = Config()
@@ -478,6 +478,7 @@ def init_config(user_data_path, last_run_path):
     c.compilations = user['compilation']
     c.sets = user['sets']
     c.last_run_path = last_run_path
+    c.logs_path = logs_path
     
     f.close()
     
@@ -501,17 +502,19 @@ def init_playlist_cache(user_data_path, cache):
     
     f.close()
 
-def write_logs(artist_tracks, playlist_tracks, run_date_artist, run_date_playlist):
-    f = open('info.log',"w")
+def write_logs(artist_tracks, playlist_tracks, conf):
+    numfiles = len([name for name in os.listdir(conf.logs_path)])
+    filename = 'info%d.log' % numfiles
+    f = open(os.path.join(conf.logs_path, filename),"w")
     if len(artist_tracks) > 0:
         f.write("--------------------------------\n")
-        f.write("Artist Date: %s, Total=%d\n" % (run_date_artist, len(artist_tracks)))
+        f.write("Artist Date: %s, Total=%d\n" % (conf.last_run_date_artist, len(artist_tracks)))
         f.write("--------------------------------\n")
         for item in artist_tracks:
             f.write("%s\n" % item)
     if len(playlist_tracks) > 0:
         f.write("--------------------------------\n")
-        f.write("Playlist Date: %s, Total=%d\n" % (run_date_playlist, len(playlist_tracks)))
+        f.write("Playlist Date: %s, Total=%d\n" % (conf.last_run_date_playlist, len(playlist_tracks)))
         f.write("--------------------------------\n")
         for item in playlist_tracks:
             f.write("%s\n" % item)
@@ -526,18 +529,23 @@ def retry_sleep(num_seconds):
 ####################################################
 
 # Get Arguments
-assert(len(sys.argv) >= 3)
+# Need at least:
+#   <user.data>
+#   <lastrun>
+#   <logfolder>
+assert(len(sys.argv) >= 4)
 user_data_path = sys.argv[1]
 last_run_path = sys.argv[2]
+logs_path = sys.argv[3]
 
 # Load User Config
-conf = init_config(user_data_path, last_run_path)
+conf = init_config(user_data_path, last_run_path, logs_path)
 
 # Get Last Run Date
 init_last_run(conf)
 
 # Load Options
-for i in range(3, len(sys.argv)):
+for i in range(1, len(sys.argv)):
     check_optional_arg(i, sys.argv, conf)
 
 # Load Spotify
@@ -547,10 +555,6 @@ spotify = tk.Spotify(token)
 # Display followed playlist IDs and exit
 if conf.show_followed_playlists:
     print_all_playlists(spotify)
-
-# Quit if we already ran today - Bug Here, will quit early if one is today
-check_last_run_quit(conf.today_date, conf.last_run_date_artist)
-check_last_run_quit(conf.today_date, conf.last_run_date_playlist)
 
 print('Authentication complete.')
 
@@ -570,11 +574,13 @@ logs_playlist_tracks = list()
 # Scan Followed Artists
 num_artist_tracks = 0
 if conf.scan_artists:
+    check_last_run_quit(conf.today_date, conf.last_run_date_artist)
     num_artist_tracks = scan_artist_tracks(spotify, conf, cache, adder, logs_artist_tracks)
     
 # Scan Specified Playlists
 num_playlist_tracks = 0
 if len(cache.playlist_datas) > 0 and conf.scan_playlists:
+    check_last_run_quit(conf.today_date, conf.last_run_date_playlist)
     num_playlist_tracks = scan_followed_playlists(spotify, conf, cache, adder, logs_playlist_tracks)
 
 # If there were any tracks found that were new, add them to our playlist
@@ -599,7 +605,7 @@ if len(adder.compilations) > 0 and len(conf.compilations) > 0:
 
 # Logs
 if len(logs_artist_tracks) > 0 or len(logs_playlist_tracks) > 0:
-    write_logs(logs_artist_tracks, logs_playlist_tracks, conf.last_run_date_artist, conf.last_run_date_playlist)
+    write_logs(logs_artist_tracks, logs_playlist_tracks, conf)
 
 # We're done here, now store when we last ran
 set_last_run(conf)
