@@ -293,11 +293,11 @@ def scan_artist_tracks(spotfiy, conf, cache, adder, logs_artist_tracks):
 
                     # Skip tracks that are 'intro' tracks that dont really have much music content
                     # 80s = 80000ms
-                    if track.duration_ms <= 86000:
+                    if track.duration_ms <= 80000:
                         continue
                     
                     if hasArtist and not track.uri in cache.artist_datas_map:
-                        print('  *%s by %s adding' % (track.name, track_artist.name))
+                        print('  *%s by %s adding' % (track.name, artist_data.name))
                         
                         # Create the Track and add to Album
                         track_data = Track()
@@ -323,7 +323,7 @@ def scan_artist_tracks(spotfiy, conf, cache, adder, logs_artist_tracks):
                         else:
                             adder.listen_later.append(track.uri)
 
-                        logs_artist_tracks.append(('%s - %s' % (track_artist.name, track.name)).encode('utf8'))
+                        logs_artist_tracks.append(('%s -- %s -- %s' % (artist_data.name, album_data.name, track.name)).encode('utf8'))
                 
                 last_chunk_track_index += len(tracks.items)
     
@@ -412,12 +412,20 @@ def check_optional_arg(index, argv, conf):
     elif argv[index] == '-fp':
         conf.show_followed_playlists = True
     elif argv[index] == '-d':
-        date_split = argv[index + 1].split(',')
-        newDateA = parse_date_string(date_split[0])
-        newDateP = parse_date_string(date_split[1])
-        print('Overwriting last run artist date %s, playlist date %s. Writing new artist date %s, new playlist date %s.' % (conf.last_run_date_artist, conf.last_run_date_playlist, newDateA, newDateP))
-        conf.last_run_date_artist = newDateA
-        conf.last_run_date_playlist = newDateP
+        storeArtist = False
+        storePlaylist = False
+        for x in range(len(argv)):
+            if argv[index] == '-a':
+                storeArtist = True
+            if argv[index] == '-p':
+                storePlaylist = True
+        newDate = parse_date_string(argv[index + 1])
+        if storeArtist:
+            print('Overwriting last run artist date %s. Writing new artist date %s.' % (conf.last_run_date_artist, newDate))
+            conf.last_run_date_artist = newDate
+        if storePlaylist:
+            print('Overwriting last run playlist date %s. Writing new playlist date %s.' % (conf.last_run_date_playlist, newDate))
+            conf.last_run_date_playlist = newDateP
 
 def parse_date_string(date_str):
     # If the date format is changed the return might need updating    
@@ -436,11 +444,21 @@ def init_last_run(conf):
 def set_last_run(conf):
     today = date.today()
     date_str = today.strftime(conf.DATE_FORMAT)
-    print('Last artist run was on %s, playlist run %s. Writing new date %s.' % (conf.last_run_date_artist, conf.last_run_date_playlist, date_str))
     f = open(conf.last_run_path,"w")
-    f.write(date_str)
-    f.write(",")
-    f.write(date_str)
+    # write new artist date
+    if conf.scan_artists:
+        print('Last artist run was on %s. Writing new date %s.' % (conf.last_run_date_artist, date_str))
+        f.write(date_str)
+        f.write(",")
+    else: # write the date from before
+        f.write(conf.last_run_date_artist)
+        f.write(",")
+    # write the new playlist date
+    if conf.scan_playlists:
+        print('Last playlist run %s. Writing new date %s.' % (conf.last_run_date_playlist, date_str))
+        f.write(date_str)
+    else: # write the date from before
+        f.write(conf.last_run_date_playlist)
     f.close()
 
 def init_config(user_data_path, last_run_path):
