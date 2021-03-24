@@ -376,8 +376,6 @@ def scan_followed_playlists(spotify, conf, cache, adder, logs_playlist_tracks):
                     cache.track_datas_map[track_data.uri] = len(cache.track_datas)
                     cache.track_datas.append(track_data)
                     #print('TrackDataCount:', len(cache.track_datas))
-
-                    logs_playlist_tracks.append(('%s - %s' % (playlist_full.name, playlist_track.track.name)).encode('utf8'))
             
             last_chunk_track_index += len(playlist_tracks.items)
             
@@ -396,9 +394,11 @@ def scan_followed_playlists(spotify, conf, cache, adder, logs_playlist_tracks):
             if not (added_count < playlist_data.limit or playlist_data.Unbounded()):
                 print('!!!Hit limit %d for %s' % (playlist_data.limit, playlist_data.name))
                 break
-            print('  *%s adding' % cache.track_datas[item].name)
-            adder.listen_later.append(cache.track_datas[item].uri)
+            td = cache.track_datas[item]
+            print('  *%s adding' % td.name)
+            adder.listen_later.append(td.uri)
             added_count += 1
+            logs_playlist_tracks.append(('%s - %s' % (playlist_data.name, td.name)).encode('utf8'))
 
 ####################################################
 #..................... Utility ......................#
