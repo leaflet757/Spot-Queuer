@@ -24,7 +24,7 @@ The <user.data> file must be in JSON format and be of the form:
     "playlists":
     [  
         {
-            "name":"Human Music Playlist",
+            "name":"Human Music Playlist [this field is for readability]",
             "id":"xxxxxxxxxx",
             "limit":"-1"
         },
@@ -35,6 +35,7 @@ TODO:
 display stale playlists
 Server Error 500
 check for track dups, uri check done - wat else?
-Inclusive date range bug?
+Playlists should check against timestamp
+Double adding song bug
 clean up this shitty code
 

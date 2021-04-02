@@ -324,7 +324,7 @@ def scan_artist_tracks(spotfiy, conf, cache, adder, logs_artist_tracks):
                         else:
                             adder.listen_later.append(track.uri)
 
-                        logs_artist_tracks.append(('%s -- %s -- %s' % (artist_data.name, album_data.name, track.name)).encode('utf8'))
+                        logs_artist_tracks.append(('%s --- %s --- %s --- %s' % (artist_data.name, album_data.name, album_data.release_date, track.name)).encode('utf8'))
                 
                 last_chunk_track_index += len(tracks.items)
     
@@ -366,7 +366,7 @@ def scan_followed_playlists(spotify, conf, cache, adder, logs_playlist_tracks):
                     track_data.album = -1
                     track_data.playlist = i
                     track_data.score = playlist_track.track.popularity
-                    #track_data.datetime = xx # is this needed?
+                    track_data.datetime = playlist_track.added_at
                     
                     # Queue up the Playlist Track
                     #to_add_tracks.append(playlist_track.track.uri)
@@ -398,7 +398,7 @@ def scan_followed_playlists(spotify, conf, cache, adder, logs_playlist_tracks):
             print('  *%s adding' % td.name)
             adder.listen_later.append(td.uri)
             added_count += 1
-            logs_playlist_tracks.append(('%s - %s' % (playlist_data.name, td.name)).encode('utf8'))
+            logs_playlist_tracks.append(('%s --- %s --- %s' % (playlist_data.name, td.datetime, td.name)).encode('utf8'))
 
 ####################################################
 #..................... Utility ......................#
