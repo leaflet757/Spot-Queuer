@@ -48,6 +48,5 @@ year-month-day,year-month-day
 - Server Error 500
 - check for track dups, uri check done - wat else?
 - Playlists should check against timestamp
-- Double adding song bug
 - clean up this shitty code
 - Add a queuer for followed podcasts

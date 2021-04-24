@@ -19,6 +19,7 @@ class Config():
         self.PLAYLIST_LIMIT = 100
         self.MARKET = "US"
         self.DATE_FORMAT = "%Y-%m-%d"
+        self.ALTERT_STALE_PLAYLIST = 6 # in months
         self.today_date = date.today()
         self.last_run_date_artist = date(2021,1,1)
         self.last_run_date_playlist = date(2021,1,1)
@@ -212,7 +213,10 @@ def scan_artist_tracks(spotfiy, conf, cache, adder, logs_artist_tracks):
                     else:
                         album_date = date(int(album_date_split[0]), int(album_date_split[1]), int(album_date_split[2]))
 
-                    if album_date >= conf.last_run_date_artist:
+                    if album_date >= conf.last_run_date_artist and album_date < conf.today_date:
+                    
+                        #logs_artist_tracks.append(('++%s --- %s --- tracks:%d --- %d' % (album.name, album.id, album.total_tracks, last_chunk_album_index)).encode('utf8'))
+                        
                         # Create the Album Data
                         album_data = Album()
                         album_data.name = album.name
@@ -268,6 +272,7 @@ def scan_artist_tracks(spotfiy, conf, cache, adder, logs_artist_tracks):
             target_artist_id = artist_data.id
             last_chunk_track_index = 0
 
+            # Only print out status every chunk
             album_count += 1
             if album_count % 50 == 1:
                 print('Processing album chunk', album_count, 'of', to_add_length)
@@ -297,7 +302,12 @@ def scan_artist_tracks(spotfiy, conf, cache, adder, logs_artist_tracks):
                     if track.duration_ms <= 80000:
                         continue
                     
-                    if hasArtist and not track.uri in cache.artist_datas_map:
+                    # For whatever reason, Tekore/Spotify-API/Publishers will have multiple albums 
+                    # containing the same tracks. (Perhaps this is for releasing a song multiple 
+                    # times on separate albums, idk). In any case, this can result in different
+                    # albums containing identical track uris. So check if the track data is already
+                    # in the map
+                    if hasArtist and not track.uri in cache.track_datas_map:
                         print('  *%s by %s adding' % (track.name, artist_data.name))
                         
                         # Create the Track and add to Album
@@ -324,6 +334,7 @@ def scan_artist_tracks(spotfiy, conf, cache, adder, logs_artist_tracks):
                         else:
                             adder.listen_later.append(track.uri)
 
+                        #logs_artist_tracks.append(('%s --- %s --- %s --- %s --- %s --- %s --- %d' % (artist_data.name, album_data.name, album_data.release_date, track.name, track.uri, track.id, last_chunk_track_index)).encode('utf8'))
                         logs_artist_tracks.append(('%s --- %s --- %s --- %s' % (artist_data.name, album_data.name, album_data.release_date, track.name)).encode('utf8'))
                 
                 last_chunk_track_index += len(tracks.items)
@@ -368,14 +379,19 @@ def scan_followed_playlists(spotify, conf, cache, adder, logs_playlist_tracks):
                     track_data.score = playlist_track.track.popularity
                     track_data.datetime = playlist_track.added_at
                     
+                    track_data_index = len(cache.track_datas)
+                    
                     # Queue up the Playlist Track
                     #to_add_tracks.append(playlist_track.track.uri)
-                    sort_playlist_tracks.append(len(cache.track_datas))
+                    sort_playlist_tracks.append(track_data_index)
 
                     # Add track to the map
-                    cache.track_datas_map[track_data.uri] = len(cache.track_datas)
+                    cache.track_datas_map[track_data.uri] = track_data_index
                     cache.track_datas.append(track_data)
-                    #print('TrackDataCount:', len(cache.track_datas))
+                    #print('TrackDataCount:', track_data_index)
+
+                    # Add Track to Playlist Data
+                    playlist_data.tracks.append(track_data_index)
             
             last_chunk_track_index += len(playlist_tracks.items)
             
