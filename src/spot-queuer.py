@@ -69,6 +69,8 @@ class Playlist:
         self.name = ""
         self.id = ""
         self.limit = 0
+        self.last_run_date = datetime() #TODO, might want to change to "native" object. date time may have timezone information then not give normalized comparisions
+        self.was_updated = False
         self.tracks = list()
     def __str__(self):
         return f'Playlist({self.name},{self.id},{self.limit},{len(self.tracks)})'
@@ -344,6 +346,7 @@ def scan_artist_tracks(spotfiy, conf, cache, adder, logs_artist_tracks):
 def scan_followed_playlists(spotify, conf, cache, adder, logs_playlist_tracks):
     
     sort_playlist_tracks = list()
+    temp_date_time = datetime()
 
     # Get the datetime of the current day
     last_run_dt = datetime.combine(conf.last_run_date_playlist, datetime.min.time())
@@ -369,6 +372,8 @@ def scan_followed_playlists(spotify, conf, cache, adder, logs_playlist_tracks):
                 
                 if playlist_track.added_at >= last_run_dt and playlist_track.track.uri not in cache.playlist_datas_map:
                     
+                    temp_date_time = playlist_track.added_at
+
                     # Create the Track and add to Album
                     track_data = Track()
                     track_data.artist = -1
@@ -377,7 +382,7 @@ def scan_followed_playlists(spotify, conf, cache, adder, logs_playlist_tracks):
                     track_data.album = -1
                     track_data.playlist = i
                     track_data.score = playlist_track.track.popularity
-                    track_data.datetime = playlist_track.added_at
+                    track_data.datetime = temp_date_time
                     
                     track_data_index = len(cache.track_datas)
                     
@@ -392,6 +397,10 @@ def scan_followed_playlists(spotify, conf, cache, adder, logs_playlist_tracks):
 
                     # Add Track to Playlist Data
                     playlist_data.tracks.append(track_data_index)
+
+                    # Conditionally set the last run date for this playllist
+                    if not playlist_data.was_updated or playlist_data.last_run_date > temp_date_time:
+                        playlist_data.last_run_date = temp_date_time
             
             last_chunk_track_index += len(playlist_tracks.items)
             
@@ -540,6 +549,29 @@ def retry_sleep(num_seconds):
     print('\nSpotfiy rate limit hit. Retry in', num_seconds, 'seconds.\n')
     time.sleep(num_seconds)
 
+def show_stale_playlists(playlist_datas, today_date, month_threshold):
+    # old + threshold < current date time
+    temp_date_time = datetime(today_date.year, today_date.month, today_date.day)
+    for playlist_data in playlist_datas:
+        future_month = playlist_data.last_run_date.month + month_threshold
+        # Year
+        if future_month > 12:
+            temp_date_time.datetime.year = playlist_data.last_run_date.year + 1
+        else
+            temp_date_time.datetime.year = playlist_data.last_run_date.year
+        # Month
+        if future_month > 12:
+            temp_date_time.datetime.month = future_month - 12
+        else:
+            temp_date_time.datetime.month = future_month
+        # Day
+        future_month.datetime.day = playlist_data.last_run_date.day
+        # Check if we should print
+        if temp_date_time < today_date:
+            # TOdo print
+
+
+
 ####################################################
 #........................MAIN......................#
 ####################################################
@@ -625,5 +657,10 @@ if len(logs_artist_tracks) > 0 or len(logs_playlist_tracks) > 0:
 
 # We're done here, now store when we last ran
 set_last_run(conf)
+
+# Now display any playlists that have not added anything in a while
+if len(cache.playlist_datas) > 0 and conf.scan_playlists and conf.meta_loaded:
+    show_stale_playlists(cache.playlist_datas, conf.today_date, conf.ALTERT_STALE_PLAYLIST)
+    write_stale_playlists_to_meta(conf.meta_playlist_file, cache.playlist_datas)
 
 print('Spot-Queuer Finished. Added', total_tracks_added, 'new songs.')
